@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     googleBot: { index: true, follow: true, "max-video-preview": -1, "max-image-preview": "large", "max-snippet": -1 },
   },
   verification: {
-    google: "google-site-verification-code-here",
+    google: "FAVWjfxKrhtZmI7Uhf3SJDhrBOXv1dSvA6Po-WC90tg",
   },
 };
 
@@ -57,6 +57,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <head>
         <link rel="icon" href="/speedtest_icon.png" />
+        {/* Google Search Console Verification - ADDED */}
+        <meta name="google-site-verification" content="FAVWjfxKrhtZmI7Uhf3SJDhrBOXv1dSvA6Po-WC90tg" />
         {/* Google AdSense - Replace ca-pub-XXXXXXXXXXXXXXXX with your AdSense publisher ID after approval */}
         <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossOrigin="anonymous"></script>
         {/* Google Analytics - Replace G-XXXXXXXXXX with your GA4 ID */}
