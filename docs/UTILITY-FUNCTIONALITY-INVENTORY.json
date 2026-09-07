@@ -1,0 +1,29 @@
+﻿[
+    {
+        "file":  "src\\app\\utilities\\electricity\\page.tsx",
+        "hasUpload":  false,
+        "hasCalculation":  true,
+        "hasOCR":  false,
+        "hasHistory":  true,
+        "hasComparison":  true,
+        "hasVerification":  true
+    },
+    {
+        "file":  "src\\app\\utilities\\gas\\page.tsx",
+        "hasUpload":  false,
+        "hasCalculation":  true,
+        "hasOCR":  false,
+        "hasHistory":  true,
+        "hasComparison":  true,
+        "hasVerification":  true
+    },
+    {
+        "file":  "src\\app\\utilities\\water\\page.tsx",
+        "hasUpload":  false,
+        "hasCalculation":  true,
+        "hasOCR":  false,
+        "hasHistory":  true,
+        "hasComparison":  true,
+        "hasVerification":  true
+    }
+]
