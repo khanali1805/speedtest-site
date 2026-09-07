@@ -1,0 +1,393 @@
+"use client";
+
+import SpeedTest from "@cloudflare/speedtest";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+type Phase = "idle" | "testing" | "walking" | "finished" | "error";
+type Quality = "strong" | "fair" | "weak";
+type Direction = "North" | "East" | "South" | "West";
+
+type Result = {
+  download: number | null;
+  upload: number | null;
+  latency: number | null;
+  jitter: number | null;
+  packetLoss: number | null;
+};
+
+type Point = {
+  id: string;
+  x: number;
+  y: number;
+  latency: number | null;
+  quality: Quality;
+  heading: number;
+};
+
+const START = { x: 50, y: 79 };
+const ROUTER = { x: 50, y: 50 };
+
+function mbps(bps: number | null | undefined) {
+  return typeof bps === "number" && Number.isFinite(bps) ? bps / 1_000_000 : null;
+}
+
+function quality(download: number | null, latency: number | null): Quality {
+  const speed = download ?? 0;
+  const ping = latency ?? 999;
+  if (speed >= 25 && ping <= 100) return "strong";
+  if (speed >= 8 && ping <= 220) return "fair";
+  return "weak";
+}
+
+function pretty(value: number | null, suffix: string, digits = 1) {
+  return value == null ? "--" : `${value.toFixed(digits)}${suffix}`;
+}
+
+function directionFor(x: number, y: number): Direction {
+  const dx = x - ROUTER.x;
+  const dy = y - ROUTER.y;
+  if (Math.abs(dx) > Math.abs(dy)) return dx >= 0 ? "East" : "West";
+  return dy >= 0 ? "South" : "North";
+}
+
+function directionAngle(x: number, y: number) {
+  return (Math.atan2(x - ROUTER.x, -(y - ROUTER.y)) * 180) / Math.PI;
+}
+
+function qualityRank(value: Quality) {
+  return value === "strong" ? 3 : value === "fair" ? 2 : 1;
+}
+
+export default function WifiAnalyzer() {
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [secondsLeft, setSecondsLeft] = useState(8);
+  const [progress, setProgress] = useState(0);
+  const [result, setResult] = useState<Result>({ download: null, upload: null, latency: null, jitter: null, packetLoss: null });
+  const [points, setPoints] = useState<Point[]>([]);
+  const [position, setPosition] = useState(START);
+  const [heading, setHeading] = useState(0);
+  const [motionReady, setMotionReady] = useState(false);
+  const [motionSupported, setMotionSupported] = useState(true);
+  const [message, setMessage] = useState("Run the Internet test, then start Walk Test. Your marker moves with your device movement — the router stays fixed.");
+
+  const engineRef = useRef<SpeedTest | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const walkRef = useRef<number | null>(null);
+  const startedAtRef = useRef(0);
+  const walkingPositionRef = useRef(START);
+  const headingRef = useRef(0);
+  const lastStepRef = useRef(0);
+  const motionEnergyRef = useRef(0);
+
+  const finalQuality = useMemo(() => quality(result.download, result.latency), [result.download, result.latency]);
+
+  const directionalSummary = useMemo(() => {
+    const directions: Direction[] = ["North", "East", "South", "West"];
+    return directions.map((direction) => {
+      const samples = points.filter((point) => directionFor(point.x, point.y) === direction);
+      if (!samples.length) return { direction, quality: null as Quality | null, samples: 0, latency: null as number | null };
+      const best = [...samples].sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality) || (a.latency ?? 999) - (b.latency ?? 999))[0];
+      const avgLatency = samples.reduce((sum, item) => sum + (item.latency ?? 999), 0) / samples.length;
+      return { direction, quality: best.quality, samples: samples.length, latency: Number.isFinite(avgLatency) ? avgLatency : null };
+    });
+  }, [points]);
+
+  const bestDirection = useMemo(() => {
+    return [...directionalSummary].filter((item) => item.quality).sort((a, b) => qualityRank(b.quality!) - qualityRank(a.quality!) || (a.latency ?? 999) - (b.latency ?? 999))[0] ?? null;
+  }, [directionalSummary]);
+
+  const weakestDirection = useMemo(() => {
+    return [...directionalSummary].filter((item) => item.quality).sort((a, b) => qualityRank(a.quality!) - qualityRank(b.quality!) || (b.latency ?? 0) - (a.latency ?? 0))[0] ?? null;
+  }, [directionalSummary]);
+
+  function clearTimers() {
+    if (timerRef.current !== null) window.clearInterval(timerRef.current);
+    if (walkRef.current !== null) window.clearInterval(walkRef.current);
+    timerRef.current = null;
+    walkRef.current = null;
+  }
+
+  useEffect(() => {
+    const onOrientation = (event: DeviceOrientationEvent) => {
+      const value = typeof event.alpha === "number" ? event.alpha : null;
+      if (value == null) return;
+      headingRef.current = value;
+      setHeading(value);
+    };
+
+    const onMotion = (event: DeviceMotionEvent) => {
+      if (phase !== "walking") return;
+      const a = event.accelerationIncludingGravity;
+      if (!a) return;
+      const magnitude = Math.sqrt((a.x ?? 0) ** 2 + (a.y ?? 0) ** 2 + (a.z ?? 0) ** 2);
+      const delta = Math.abs(magnitude - 9.81);
+      motionEnergyRef.current = motionEnergyRef.current * 0.78 + delta * 0.22;
+      const now = performance.now();
+      if (motionEnergyRef.current > 1.45 && now - lastStepRef.current > 480) {
+        lastStepRef.current = now;
+        moveFromHeading(1);
+      }
+    };
+
+    if (typeof window !== "undefined" && !("DeviceMotionEvent" in window)) setMotionSupported(false);
+    window.addEventListener("deviceorientation", onOrientation);
+    window.addEventListener("deviceorientationabsolute", onOrientation as EventListener);
+    window.addEventListener("devicemotion", onMotion);
+    return () => {
+      window.removeEventListener("deviceorientation", onOrientation);
+      window.removeEventListener("deviceorientationabsolute", onOrientation as EventListener);
+      window.removeEventListener("devicemotion", onMotion);
+      clearTimers();
+      try { engineRef.current?.pause(); } catch {}
+    };
+  }, [phase]);
+
+  async function enableMotion() {
+    try {
+      const motionEvent = DeviceMotionEvent as typeof DeviceMotionEvent & { requestPermission?: () => Promise<string> };
+      const orientationEvent = DeviceOrientationEvent as typeof DeviceOrientationEvent & { requestPermission?: () => Promise<string> };
+      if (typeof motionEvent.requestPermission === "function") await motionEvent.requestPermission();
+      if (typeof orientationEvent.requestPermission === "function") await orientationEvent.requestPermission();
+      setMotionReady(true);
+      setMessage("Live movement is enabled. Walk naturally; the marker advances in the direction your device is moving/facing.");
+    } catch {
+      setMessage("Motion permission was not granted. You can still use the walk controls below on desktop.");
+    }
+  }
+
+  async function ping() {
+    const started = performance.now();
+    try {
+      const response = await fetch("/api/wifi/ping", { cache: "no-store" });
+      if (response.ok) {
+        const data = await response.json();
+        const value = Number(data?.latencyMs);
+        if (Number.isFinite(value)) return value;
+      }
+    } catch {}
+    return performance.now() - started;
+  }
+
+  function applyResults(results: SpeedTest["results"]) {
+    setResult({
+      download: mbps(results.getDownloadBandwidth()),
+      upload: mbps(results.getUploadBandwidth()),
+      latency: results.getUnloadedLatency() ?? null,
+      jitter: results.getUnloadedJitter() ?? null,
+      packetLoss: null,
+    });
+  }
+
+  function startSpeedTest() {
+    if (phase === "testing") return;
+    clearTimers();
+    try { engineRef.current?.pause(); } catch {}
+
+    const engine = new SpeedTest({
+      autoStart: false,
+      measurements: [
+        { type: "latency", numPackets: 6 },
+        { type: "download", bytes: 1e5, count: 3, bypassMinDuration: true },
+        { type: "download", bytes: 1e6, count: 4 },
+        { type: "download", bytes: 1e7, count: 3 },
+        { type: "upload", bytes: 1e5, count: 3, bypassMinDuration: true },
+        { type: "upload", bytes: 1e6, count: 3 },
+        { type: "upload", bytes: 1e7, count: 2 },
+      ],
+      bandwidthFinishRequestDuration: 500,
+      bandwidthAbortRequestDuration: 1200,
+      measureDownloadLoadedLatency: false,
+      measureUploadLoadedLatency: false,
+    });
+
+    engineRef.current = engine;
+    startedAtRef.current = performance.now();
+    setPhase("testing");
+    setProgress(0);
+    setSecondsLeft(8);
+    setMessage("Fast Internet test running… live results are measured from your connection to the Cloudflare edge.");
+
+    engine.onResultsChange = () => {
+      applyResults(engine.results);
+      const elapsed = performance.now() - startedAtRef.current;
+      setProgress(Math.min(100, (elapsed / 8000) * 100));
+      setSecondsLeft(Math.max(0, Math.ceil((8000 - elapsed) / 1000)));
+    };
+    engine.onFinish = (results) => {
+      applyResults(results);
+      setPhase("finished");
+      setProgress(100);
+      setSecondsLeft(0);
+      setMessage("Internet baseline complete. Start Walk Test and physically move around. The router remains fixed while your marker moves.");
+      clearTimers();
+    };
+    engine.onError = (error) => {
+      clearTimers();
+      setPhase("error");
+      setMessage(`The Internet test stopped because of an error: ${error}`);
+    };
+    void engine.play();
+
+    timerRef.current = window.setInterval(() => {
+      const elapsed = performance.now() - startedAtRef.current;
+      setProgress(Math.min(100, (elapsed / 8000) * 100));
+      setSecondsLeft(Math.max(0, Math.ceil((8000 - elapsed) / 1000)));
+      if (elapsed >= 8000 && engineRef.current && !engineRef.current.isFinished) {
+        try { engineRef.current.pause(); applyResults(engineRef.current.results); } catch {}
+        setPhase("finished");
+        setProgress(100);
+        setSecondsLeft(0);
+        setMessage("8-second Internet baseline complete. You can run it again any time.");
+        clearTimers();
+      }
+    }, 200);
+  }
+
+  async function recordSample() {
+    const latency = await ping();
+    const pos = { ...walkingPositionRef.current };
+    const q = quality(result.download, latency);
+    const point: Point = { id: `${Date.now()}-${Math.random()}`, x: pos.x, y: pos.y, latency, quality: q, heading: headingRef.current };
+    setPoints((old) => [...old.slice(-59), point]);
+  }
+
+  function moveFromHeading(distance = 4) {
+    if (phase !== "walking") return;
+    const pos = walkingPositionRef.current;
+    const radians = (headingRef.current * Math.PI) / 180;
+    const next = {
+      x: Math.min(92, Math.max(8, pos.x + Math.sin(radians) * distance)),
+      y: Math.min(92, Math.max(8, pos.y - Math.cos(radians) * distance)),
+    };
+    walkingPositionRef.current = next;
+    setPosition(next);
+  }
+
+  function moveManual(direction: Direction) {
+    if (phase !== "walking") return;
+    const deltas: Record<Direction, { x: number; y: number; heading: number }> = {
+      North: { x: 0, y: -5, heading: 0 },
+      East: { x: 5, y: 0, heading: 90 },
+      South: { x: 0, y: 5, heading: 180 },
+      West: { x: -5, y: 0, heading: 270 },
+    };
+    const move = deltas[direction];
+    headingRef.current = move.heading;
+    setHeading(move.heading);
+    const pos = walkingPositionRef.current;
+    const next = { x: Math.min(92, Math.max(8, pos.x + move.x)), y: Math.min(92, Math.max(8, pos.y + move.y)) };
+    walkingPositionRef.current = next;
+    setPosition(next);
+    void recordSample();
+  }
+
+  async function startWalkTest() {
+    if (phase === "testing" || phase === "walking" || result.download == null) return;
+    clearTimers();
+    setPhase("walking");
+    setMessage("Walk slowly. Each real Internet sample is stored at your current position; the router and its waves stay fixed.");
+    await recordSample();
+    walkRef.current = window.setInterval(() => void recordSample(), 1400);
+  }
+
+  function stopWalkTest() {
+    if (phase !== "walking") return;
+    if (walkRef.current !== null) window.clearInterval(walkRef.current);
+    walkRef.current = null;
+    setPhase("finished");
+    setMessage("Walk test complete. Review the direction summary to see where your Internet was strong, normal, or weak.");
+  }
+
+  function resetWalk() {
+    clearTimers();
+    walkingPositionRef.current = START;
+    setPosition(START);
+    setPoints([]);
+    setHeading(0);
+    headingRef.current = 0;
+    setPhase(result.download == null ? "idle" : "finished");
+    setMessage(result.download == null ? "Run the Internet test, then start Walk Test." : "Walk map reset. Start Walk Test again whenever you are ready.");
+  }
+
+  const counts = {
+    strong: points.filter((p) => p.quality === "strong").length,
+    fair: points.filter((p) => p.quality === "fair").length,
+    weak: points.filter((p) => p.quality === "weak").length,
+  };
+
+  return (
+    <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_28px_90px_-45px_rgba(15,23,42,.35)]">
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 px-6 py-7 text-white sm:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.2em] text-blue-100">SmartCalc Wi-Fi Analyzer</div>
+            <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Which area of my home has weak Wi-Fi?</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-50">Measure real Internet quality, then walk. The router stays at the center; your live marker moves with your device movement.</p>
+          </div>
+          <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-right backdrop-blur">
+            <div className="text-xs font-bold text-blue-100">Auto stop</div>
+            <div className="text-lg font-black">8 seconds</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5 sm:p-7 lg:grid-cols-[.95fr_1.05fr]">
+        <div className="space-y-5">
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Real Internet Speed Test</div>
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">Cloudflare Edge</span>
+            </div>
+            <div className="mt-4 text-5xl font-black tracking-tight text-slate-950">{pretty(result.download, "")}</div>
+            <div className="mt-1 text-sm text-slate-500">Mbps download</div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-violet-500 transition-[width] duration-200" style={{ width: `${progress}%` }} /></div>
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[["Upload", pretty(result.upload, " Mbps")], ["Latency", pretty(result.latency, " ms", 0)], ["Jitter", pretty(result.jitter, " ms", 0)], ["Status", phase === "testing" ? `${secondsLeft}s` : finalQuality]].map(([label, value]) => <div key={label} className="rounded-2xl bg-slate-50 p-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-base font-black capitalize text-slate-950">{value}</div></div>)}
+            </div>
+            <button type="button" onClick={startSpeedTest} disabled={phase === "testing"} className="mt-5 w-full rounded-2xl bg-blue-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{phase === "testing" ? `Testing… ${secondsLeft}s` : "Start Fast Internet Test"}</button>
+            <p className="mt-3 text-xs leading-5 text-slate-500">Measured from your connection to the Cloudflare edge. No room-distance formula is used for speed.</p>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3"><div><div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Walk Test · Live Sampling</div><p className="mt-2 text-sm leading-6 text-slate-600">Move through your home with the device. The fixed router stays centered while your marker moves with your movement.</p></div><div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{motionReady ? "Motion on" : "Motion ready"}</div></div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2"><button type="button" onClick={() => void startWalkTest()} disabled={phase === "testing" || phase === "walking" || result.download == null} className="rounded-2xl bg-emerald-500 px-5 py-3.5 text-sm font-black text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-45">Start Walk Test</button><button type="button" onClick={stopWalkTest} disabled={phase !== "walking"} className="rounded-2xl border border-rose-200 bg-white px-5 py-3.5 text-sm font-black text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-45">Stop Walk Test</button></div>
+            <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={enableMotion} disabled={!motionSupported || motionReady} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-black text-blue-700 disabled:opacity-45">{motionReady ? "Live movement enabled" : motionSupported ? "Enable live movement" : "Motion unavailable"}</button><button type="button" onClick={resetWalk} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700">Reset Walk Map</button></div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">{message}</p>
+            <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">Desktop fallback: while Walk Test is active, use the four direction controls on the map to record movement.</div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3"><div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><div className="text-xs font-black uppercase text-emerald-700">Strong</div><div className="mt-1 text-2xl font-black text-emerald-950">{counts.strong}</div></div><div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><div className="text-xs font-black uppercase text-amber-700">Normal</div><div className="mt-1 text-2xl font-black text-amber-950">{counts.fair}</div></div><div className="rounded-2xl border border-rose-200 bg-rose-50 p-4"><div className="text-xs font-black uppercase text-rose-700">Weak</div><div className="mt-1 text-2xl font-black text-rose-950">{counts.weak}</div></div></div>
+        </div>
+
+        <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-4"><div><div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Live Walk Test · Top View</div><div className="mt-1 text-xl font-black text-slate-950">Router-centered movement view</div><p className="mt-1 text-xs text-slate-500">The center stays fixed. Only your marker and sampled path move.</p></div><div className="rounded-xl bg-white px-3 py-2 text-right text-xs font-black text-slate-600 shadow-sm">Direction<br/><span className="text-blue-600">{Math.round(((heading % 360) + 360) % 360)}°</span></div></div>
+
+          <div className="relative mt-5 aspect-square overflow-hidden rounded-[28px] border border-slate-200 bg-white">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,.04),transparent_58%)]" />
+            <div className="absolute left-1/2 top-1/2 h-px w-[92%] -translate-x-1/2 bg-slate-200" />
+            <div className="absolute left-1/2 top-1/2 h-[92%] w-px -translate-y-1/2 bg-slate-200" />
+            {[22, 34, 46].map((size, index) => <div key={size} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-blue-200/70" style={{ width: `${size}%`, height: `${size}%`, animation: `sc-wave-${index} 2.8s ease-out infinite`, animationDelay: `${index * 0.65}s` }} />)}
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"><div className="absolute left-1/2 top-1/2 size-28 -translate-x-1/2 -translate-y-1/2 rounded-full border border-blue-100" /><div className="absolute left-1/2 top-1/2 size-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-blue-200" /><div className="relative grid size-14 place-items-center rounded-full bg-slate-950 text-[9px] font-black text-white shadow-xl">ROUTER</div></div>
+
+            {points.map((point) => { const tone = point.quality === "strong" ? "bg-emerald-500" : point.quality === "fair" ? "bg-amber-400" : "bg-rose-500"; return <div key={point.id} className={`absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ${tone} ring-2 ring-white shadow`} style={{ left: `${point.x}%`, top: `${point.y}%` }} title={`${point.quality} · ${point.latency?.toFixed(0) ?? "--"} ms`} />; })}
+            {points.length > 1 && <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline fill="none" stroke="currentColor" strokeWidth="0.55" strokeDasharray="1.8 1.4" className="text-blue-500/60" points={points.map((p) => `${p.x},${p.y}`).join(" ")} /></svg>}
+
+            <div className="absolute -translate-x-1/2 -translate-y-1/2 transition-[left,top] duration-300" style={{ left: `${position.x}%`, top: `${position.y}%` }}>
+              <div className="relative grid size-12 place-items-center rounded-full border-4 border-white bg-white shadow-[0_8px_28px_rgba(15,23,42,.25)]" style={{ transform: `rotate(${heading}deg)` }} aria-label="Your current movement position"><div className="size-7 rounded-full bg-blue-600 shadow-inner" /><span className="absolute -top-2 left-1/2 h-0 w-0 -translate-x-1/2 border-x-[5px] border-b-[9px] border-x-transparent border-b-blue-700" /></div>
+            </div>
+
+            {phase === "walking" && <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1.5 text-xs font-black text-white shadow-lg">Live movement · {points.length} samples</div>}
+          </div>
+
+          <div className="mt-4 grid grid-cols-4 gap-2"><button type="button" onClick={() => moveManual("North")} disabled={phase !== "walking"} className="rounded-xl border border-slate-200 bg-white py-2 text-xs font-black text-slate-700 disabled:opacity-40">↑</button><button type="button" onClick={() => moveManual("East")} disabled={phase !== "walking"} className="rounded-xl border border-slate-200 bg-white py-2 text-xs font-black text-slate-700 disabled:opacity-40">→</button><button type="button" onClick={() => moveManual("South")} disabled={phase !== "walking"} className="rounded-xl border border-slate-200 bg-white py-2 text-xs font-black text-slate-700 disabled:opacity-40">↓</button><button type="button" onClick={() => moveManual("West")} disabled={phase !== "walking"} className="rounded-xl border border-slate-200 bg-white py-2 text-xs font-black text-slate-700 disabled:opacity-40">←</button></div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-white p-4"><div className="text-xs font-black uppercase tracking-wide text-slate-500">Best measured direction</div><div className="mt-1 text-xl font-black text-emerald-600">{bestDirection?.direction ?? "--"}</div><div className="text-xs text-slate-500">{bestDirection ? `${bestDirection.quality} · ${Math.round(bestDirection.latency ?? 0)} ms` : "Complete a walk to compare"}</div></div><div className="rounded-2xl border border-slate-200 bg-white p-4"><div className="text-xs font-black uppercase tracking-wide text-slate-500">Weakest measured direction</div><div className="mt-1 text-xl font-black text-rose-600">{weakestDirection?.direction ?? "--"}</div><div className="text-xs text-slate-500">{weakestDirection ? `${weakestDirection.quality} · ${Math.round(weakestDirection.latency ?? 0)} ms` : "Complete a walk to compare"}</div></div></div>
+
+          <div className="mt-3 grid grid-cols-4 gap-2">{directionalSummary.map((item) => <div key={item.direction} className="rounded-xl bg-white p-3 text-center shadow-sm"><div className="text-xs font-black text-slate-700">{item.direction}</div><div className={`mt-1 text-xs font-black ${item.quality === "strong" ? "text-emerald-600" : item.quality === "fair" ? "text-amber-600" : item.quality === "weak" ? "text-rose-600" : "text-slate-300"}`}>{item.quality ?? "No data"}</div></div>)}</div>
+        </div>
+      </div>
+
+      <style jsx>{`@keyframes sc-wave-0 {0%{transform:translate(-50%,-50%) scale(.72);opacity:.75}100%{transform:translate(-50%,-50%) scale(1.2);opacity:0}} @keyframes sc-wave-1 {0%{transform:translate(-50%,-50%) scale(.72);opacity:.65}100%{transform:translate(-50%,-50%) scale(1.2);opacity:0}} @keyframes sc-wave-2 {0%{transform:translate(-50%,-50%) scale(.72);opacity:.55}100%{transform:translate(-50%,-50%) scale(1.2);opacity:0}}`}</style>
+    </section>
+  );
+}

@@ -1,0 +1,923 @@
+﻿"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import SpeedTest from "@cloudflare/speedtest";
+
+type Quality = "Strong" | "Normal" | "Weak" | "Unknown";
+
+type GeoPoint = {
+  lat: number;
+  lon: number;
+  accuracy: number | null;
+  heading: number | null;
+  speed: number | null;
+  timestamp: number;
+};
+
+type Sample = {
+  x: number;
+  y: number;
+  distance: number;
+  bearing: number;
+  quality: Quality;
+  latency: number | null;
+  download: number | null;
+  accuracy: number | null;
+  timestamp: number;
+};
+
+type SpeedState = {
+  running: boolean;
+  finished: boolean;
+  download: number | null;
+  upload: number | null;
+  latency: number | null;
+  jitter: number | null;
+  error: string | null;
+};
+
+const INITIAL_SPEED: SpeedState = {
+  running: false,
+  finished: false,
+  download: null,
+  upload: null,
+  latency: null,
+  jitter: null,
+  error: null,
+};
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function qualityFor(download: number | null, latency: number | null): Quality {
+  if (download == null && latency == null) return "Unknown";
+  if (latency != null && latency > 100) return "Weak";
+  if (download != null && download < 10) return "Weak";
+  if (latency != null && latency > 50) return "Normal";
+  if (download != null && download < 50) return "Normal";
+  return "Strong";
+}
+
+function qualityClass(q: Quality) {
+  if (q === "Strong") return "bg-emerald-400";
+  if (q === "Normal") return "bg-amber-300";
+  if (q === "Weak") return "bg-rose-400";
+  return "bg-slate-300";
+}
+
+function fmtMbps(v: number | null) {
+  return v == null ? "--" : `${v.toFixed(v >= 100 ? 0 : 1)} Mbps`;
+}
+
+function fmtMs(v: number | null) {
+  return v == null ? "--" : `${Math.round(v)} ms`;
+}
+
+function distanceMeters(a: GeoPoint, b: GeoPoint) {
+  const rad = Math.PI / 180;
+  const lat1 = a.lat * rad;
+  const lat2 = b.lat * rad;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLon = (b.lon - a.lon) * rad;
+  const sinLat = Math.sin(dLat / 2);
+  const sinLon = Math.sin(dLon / 2);
+  const h =
+    sinLat * sinLat +
+    Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function relativeMeters(router: GeoPoint, user: GeoPoint) {
+  const rad = Math.PI / 180;
+  const metersLat = (user.lat - router.lat) * 111320;
+  const metersLon =
+    (user.lon - router.lon) *
+    111320 *
+    Math.cos(router.lat * rad);
+
+  return {
+    east: metersLon,
+    north: metersLat,
+    distance: Math.hypot(metersLon, metersLat),
+  };
+}
+
+function bearingDegrees(router: GeoPoint, user: GeoPoint) {
+  const rad = Math.PI / 180;
+  const lat1 = router.lat * rad;
+  const lat2 = user.lat * rad;
+  const dLon = (user.lon - router.lon) * rad;
+
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function bearingName(bearing: number) {
+  if (bearing >= 315 || bearing < 45) return "North";
+  if (bearing < 135) return "East";
+  if (bearing < 225) return "South";
+  return "West";
+}
+
+function relativePixel(east: number, north: number) {
+  const scale = 4;
+  return {
+    x: clamp(east * scale, -44, 44),
+    y: clamp(-north * scale, -44, 44),
+  };
+}
+
+export default function WifiAnalyzer() {
+  const [speed, setSpeed] = useState<SpeedState>(INITIAL_SPEED);
+  const [locationReady, setLocationReady] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [walkRunning, setWalkRunning] = useState(false);
+  const [heading, setHeading] = useState<number | null>(null);
+  const [routerLat, setRouterLat] = useState<number | null>(null);
+  const [routerLon, setRouterLon] = useState<number | null>(null);
+  const [user, setUser] = useState<GeoPoint | null>(null);
+  const [userX, setUserX] = useState(0);
+  const [userY, setUserY] = useState(0);
+  const [points, setPoints] = useState<Sample[]>([]);
+  const [lastSample, setLastSample] = useState<Sample | null>(null);
+  const [status, setStatus] = useState("Analyze your position before starting.");
+  const [calibrationOpen, setCalibrationOpen] = useState(false);
+
+  const speedRef = useRef<SpeedTest | null>(null);
+  const watchRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentUserRef = useRef<GeoPoint | null>(null);
+  const routerRef = useRef<GeoPoint | null>(null);
+  const speedSnapshotRef = useRef<SpeedState>(INITIAL_SPEED);
+  const samplingRef = useRef(false);
+
+    useEffect(() => {
+    const onOrientation = (event: DeviceOrientationEvent) => {
+      if (typeof event.alpha === "number") {
+        document.documentElement.style.setProperty("--smartcalc-heading", `${Math.round((360 - event.alpha + 360) % 360)}deg`);
+      }
+    };
+    window.addEventListener("deviceorientationabsolute", onOrientation, true);
+    window.addEventListener("deviceorientation", onOrientation, true);
+    return () => {
+      window.removeEventListener("deviceorientationabsolute", onOrientation, true);
+      window.removeEventListener("deviceorientation", onOrientation, true);
+    };
+  }, []);
+useEffect(() => {
+    speedSnapshotRef.current = speed;
+  }, [speed]);
+
+  const applyUserPosition = useCallback((position: GeolocationPosition) => {
+    const next: GeoPoint = {
+      lat: position.coords.latitude,
+      lon: position.coords.longitude,
+      accuracy: finite(position.coords.accuracy),
+      heading: finite(position.coords.heading),
+      speed: finite(position.coords.speed),
+      timestamp: position.timestamp,
+    };
+
+    currentUserRef.current = next;
+    setUser(next);
+
+    const router = routerRef.current;
+    if (!router) {
+      setUserX(0);
+      setUserY(0);
+      return;
+    }
+
+    const relative = relativeMeters(router, next);
+    const px = relativePixel(relative.east, relative.north);
+    setUserX(px.x);
+    setUserY(px.y);
+  }, []);
+
+  const analyzePosition = useCallback(() => {
+    if (!("geolocation" in navigator)) {
+      setLocationReady(false);
+      setLocationError("This browser does not provide geolocation.");
+      setStatus("Location sensor unavailable.");
+      return;
+    }
+
+    setLocationError(null);
+    setStatus("Requesting precise device location...");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        applyUserPosition(position);
+        setLocationReady(true);
+
+        if (routerRef.current) {
+          setStatus("Position analyzed. Ready for walk test.");
+        } else {
+          setStatus("Position analyzed. Calibrate the router before walk testing.");
+        }
+      },
+      (error) => {
+        setLocationReady(false);
+        if (error.code === 1) {
+          setLocationError("Location permission was denied. Allow location access and retry.");
+        } else if (error.code === 2) {
+          setLocationError("Location is unavailable. Check device location services.");
+        } else {
+          setLocationError("Location request timed out. Retry in a clear-sky/open area if possible.");
+        }
+        setStatus("Position analysis failed.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      }
+    );
+  }, [applyUserPosition]);
+
+  const calibrateRouterHere = useCallback(() => {
+    const current = currentUserRef.current;
+    if (!current) {
+      setCalibrationOpen(true);
+      setStatus("Analyze your position first, then calibrate the router.");
+      return;
+    }
+
+    routerRef.current = current;
+    setRouterLat(current.lat);
+    setRouterLon(current.lon);
+    setUserX(0);
+    setUserY(0);
+    setStatus("Router reference calibrated at the current device position.");
+    setCalibrationOpen(false);
+  }, []);
+
+  const clearRouterCalibration = useCallback(() => {
+    routerRef.current = null;
+    setRouterLat(null);
+    setRouterLon(null);
+    setUserX(0);
+    setUserY(0);
+    setStatus(
+      locationReady
+        ? "Position analyzed. Calibrate the router before walk testing."
+        : "Analyze your position before starting."
+    );
+  }, [locationReady]);
+
+  const runSpeedTest = useCallback(() => {
+    if (speedRef.current) {
+      try {
+        speedRef.current.pause();
+      } catch {}
+    }
+
+    setSpeed({ ...INITIAL_SPEED, running: true });
+    setStatus("Measuring Internet connection against the Cloudflare edge...");
+
+    try {
+      const test = new SpeedTest({
+        autoStart: false,
+        measureDownloadLoadedLatency: true,
+        measureUploadLoadedLatency: true,
+        measurements: [
+          { type: "latency", numPackets: 8 },
+          { type: "download", bytes: 1e5, count: 4, bypassMinDuration: true },
+          { type: "latency", numPackets: 12 },
+          { type: "download", bytes: 1e6, count: 5 },
+          { type: "upload", bytes: 1e5, count: 5 },
+          { type: "download", bytes: 1e7, count: 3 },
+          { type: "upload", bytes: 1e6, count: 3 },
+        ],
+      });
+
+      speedRef.current = test;
+
+      test.onResultsChange = () => {
+        const r = test.results;
+        const down = finite(r.getDownloadBandwidth());
+        const up = finite(r.getUploadBandwidth());
+        const lat = finite(r.getUnloadedLatency());
+        const jit = finite(r.getUnloadedJitter());
+
+        setSpeed((current) => ({
+          ...current,
+          download: down == null ? current.download : down / 1e6,
+          upload: up == null ? current.upload : up / 1e6,
+          latency: lat,
+          jitter: jit,
+        }));
+      };
+
+      test.onFinish = (results) => {
+        const down = finite(results.getDownloadBandwidth());
+        const up = finite(results.getUploadBandwidth());
+        const lat = finite(results.getUnloadedLatency());
+        const jit = finite(results.getUnloadedJitter());
+
+        setSpeed({
+          running: false,
+          finished: true,
+          download: down == null ? null : down / 1e6,
+          upload: up == null ? null : up / 1e6,
+          latency: lat,
+          jitter: jit,
+          error: null,
+        });
+        setStatus("Internet speed test complete.");
+      };
+
+      test.onError = (error) => {
+        setSpeed((current) => ({
+          ...current,
+          running: false,
+          error: String(error),
+        }));
+        setStatus("Internet speed test failed. Retry.");
+      };
+
+      // Start only after all event handlers are attached.
+      test.play();
+    } catch (error) {
+      setSpeed({
+        ...INITIAL_SPEED,
+        error: error instanceof Error ? error.message : "Speed test failed.",
+      });
+      setStatus("Internet speed test failed. Retry.");
+    }
+  }, []);
+
+  const sampleNetwork = useCallback(async () => {
+    if (samplingRef.current) return;
+    samplingRef.current = true;
+
+    try {
+      const started = performance.now();
+      const response = await fetch("/api/wifi/ping", {
+        cache: "no-store",
+        headers: { "cache-control": "no-cache" },
+      });
+      const elapsed = performance.now() - started;
+      const payload = await response.json().catch(() => ({}));
+
+      const measuredLatency =
+        finite(payload?.latency) ?? (Number.isFinite(elapsed) ? elapsed : null);
+
+      const current = currentUserRef.current;
+      const router = routerRef.current;
+      if (!current || !router) return;
+
+      const relative = relativeMeters(router, current);
+      const bearing = bearingDegrees(router, current);
+      const px = relativePixel(relative.east, relative.north);
+      const snapshot = speedSnapshotRef.current;
+
+      const sample: Sample = {
+        x: px.x,
+        y: px.y,
+        distance: relative.distance,
+        bearing,
+        quality: qualityFor(snapshot.download, measuredLatency ?? snapshot.latency),
+        latency: measuredLatency,
+        download: snapshot.download,
+        accuracy: current.accuracy,
+        timestamp: Date.now(),
+      };
+
+      setLastSample(sample);
+      setPoints((existing) => [...existing.slice(-119), sample]);
+    } catch {
+      const current = currentUserRef.current;
+      const router = routerRef.current;
+      if (current && router) {
+        const relative = relativeMeters(router, current);
+        const bearing = bearingDegrees(router, current);
+        const px = relativePixel(relative.east, relative.north);
+        const snapshot = speedSnapshotRef.current;
+
+        const sample: Sample = {
+          x: px.x,
+          y: px.y,
+          distance: relative.distance,
+          bearing,
+          quality: qualityFor(snapshot.download, snapshot.latency),
+          latency: snapshot.latency,
+          download: snapshot.download,
+          accuracy: current.accuracy,
+          timestamp: Date.now(),
+        };
+
+        setLastSample(sample);
+        setPoints((existing) => [...existing.slice(-119), sample]);
+      }
+    } finally {
+      samplingRef.current = false;
+    }
+  }, []);
+
+  const stopWalk = useCallback(() => {
+    if (watchRef.current != null) {
+      navigator.geolocation.clearWatch(watchRef.current);
+      watchRef.current = null;
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setWalkRunning(false);
+    setStatus(points.length ? "Walk analysis complete." : "Walk test stopped.");
+  }, [points.length]);
+
+  const startWalk = useCallback(() => {
+    if (!locationReady) {
+      setCalibrationOpen(false);
+      setStatus("Starting location permission request...");
+      analyzePosition();
+      return;
+    }
+
+    if (!routerRef.current) {
+      setCalibrationOpen(true);
+      setStatus("Walk test is blocked until the router is calibrated. Stand beside the physical router and press Calibrate Router Here.");
+      return;
+    }
+
+    if (!("geolocation" in navigator)) {
+      setLocationError("Live movement requires geolocation.");
+      return;
+    }
+
+    if (watchRef.current != null || timerRef.current) {
+      stopWalk();
+    }
+
+    setPoints([]);
+    setLastSample(null);
+    setWalkRunning(true);
+    setStatus("Walk now. GPS position and network latency are being sampled every 1.8 seconds.");
+
+    watchRef.current = navigator.geolocation.watchPosition(
+      applyUserPosition,
+      (error) => {
+        setLocationError(
+          error.code === 1
+            ? "Live location permission was denied."
+            : "Live location became unavailable."
+        );
+        setStatus("Live movement tracking interrupted.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
+
+    void sampleNetwork();
+    timerRef.current = setInterval(() => {
+      void sampleNetwork();
+    }, 1800);
+  }, [
+    analyzePosition,
+    applyUserPosition,
+    locationReady,
+    sampleNetwork,
+    stopWalk,
+  ]);
+
+  const resetWalk = useCallback(() => {
+    if (watchRef.current != null) {
+      navigator.geolocation.clearWatch(watchRef.current);
+      watchRef.current = null;
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    setWalkRunning(false);
+    setPoints([]);
+    setLastSample(null);
+
+    const current = currentUserRef.current;
+    const router = routerRef.current;
+    if (current && router) {
+      const relative = relativeMeters(router, current);
+      const px = relativePixel(relative.east, relative.north);
+      setUserX(px.x);
+      setUserY(px.y);
+    } else {
+      setUserX(0);
+      setUserY(0);
+    }
+
+    setStatus(
+      routerRef.current
+        ? "Walk data reset. Ready for another real test."
+        : "Walk data reset. Calibrate the router before testing."
+    );
+  }, []);
+
+    useEffect(() => {
+    const onOrientation = (event: DeviceOrientationEvent) => {
+      if (typeof event.alpha === "number") {
+        document.documentElement.style.setProperty("--smartcalc-heading", `${Math.round((360 - event.alpha + 360) % 360)}deg`);
+      }
+    };
+    window.addEventListener("deviceorientationabsolute", onOrientation, true);
+    window.addEventListener("deviceorientation", onOrientation, true);
+    return () => {
+      window.removeEventListener("deviceorientationabsolute", onOrientation, true);
+      window.removeEventListener("deviceorientation", onOrientation, true);
+    };
+  }, []);
+useEffect(() => {
+    analyzePosition();
+
+    const orientationHandler = (event: DeviceOrientationEvent) => {
+      const webkit = event as DeviceOrientationEvent & {
+        webkitCompassHeading?: number;
+      };
+
+      const compass =
+        typeof webkit.webkitCompassHeading === "number"
+          ? webkit.webkitCompassHeading
+          : typeof event.alpha === "number"
+            ? (360 - event.alpha + 360) % 360
+            : null;
+
+      if (compass != null && Number.isFinite(compass)) {
+        setHeading(Math.round(compass));
+      }
+    };
+
+    window.addEventListener("deviceorientation", orientationHandler, true);
+
+    return () => {
+      window.removeEventListener("deviceorientation", orientationHandler, true);
+
+      if (watchRef.current != null && "geolocation" in navigator) {
+        navigator.geolocation.clearWatch(watchRef.current);
+      }
+      if (timerRef.current) clearInterval(timerRef.current);
+
+      try {
+        speedRef.current?.pause();
+      } catch {}
+    };
+  }, [analyzePosition]);
+
+  const directional = useMemo(() => {
+    const groups: Record<string, Sample[]> = {
+      North: [],
+      East: [],
+      South: [],
+      West: [],
+    };
+
+    for (const point of points) {
+      groups[bearingName(point.bearing)].push(point);
+    }
+
+    return Object.entries(groups).map(([direction, values]) => {
+      if (!values.length) {
+        return {
+          direction,
+          quality: "No sample",
+          avgLatency: null as number | null,
+          count: 0,
+        };
+      }
+
+      const score = values.reduce((sum, item) => {
+        if (item.quality === "Strong") return sum + 3;
+        if (item.quality === "Normal") return sum + 2;
+        if (item.quality === "Weak") return sum + 1;
+        return sum;
+      }, 0) / values.length;
+
+      const latencies = values
+        .map((item) => item.latency)
+        .filter((value): value is number => value != null);
+
+      const avgLatency = latencies.length
+        ? latencies.reduce((a, b) => a + b, 0) / latencies.length
+        : null;
+
+      return {
+        direction,
+        quality:
+          score >= 2.5 ? "Strong" : score >= 1.5 ? "Normal" : "Weak",
+        avgLatency,
+        count: values.length,
+      };
+    });
+  }, [points]);
+
+  const routerCalibrated = routerLat != null && routerLon != null;
+
+  return (
+    <section className="smartcalc-mobile-panel smartcalc-safe-bottom space-y-4">
+      <div className="grid gap-5 lg:grid-cols-[1fr_1.08fr]">
+        <div className="rounded-[22px] border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                Real Internet Speed Test
+              </p>
+              <h2 className="mt-2 text-2xl font-black tracking-tight">
+                Cloudflare Edge Engine
+              </h2>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+              {speed.running ? "Testing" : speed.finished ? "Complete" : "Ready"}
+            </span>
+          </div>
+
+          <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Metric label="Download" value={fmtMbps(speed.download)} />
+            <Metric label="Upload" value={fmtMbps(speed.upload)} />
+            <Metric label="Latency" value={fmtMs(speed.latency)} />
+            <Metric label="Jitter" value={fmtMs(speed.jitter)} />
+          </div>
+
+          <button
+            type="button"
+            onClick={runSpeedTest}
+            disabled={speed.running}
+            className="mt-6 w-full rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60"
+          >
+ {speed.running? "Testing Internet..." : speed.finished? "Run Speed Test Again" : "Start Internet Speed"}
+
+
+
+
+          </button>
+
+          {speed.error && (
+            <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+              {speed.error}
+            </p>
+          )}
+
+          <p className="mt-4 text-xs leading-5 text-slate-500">
+            Measurements are taken from the browser against the Cloudflare edge.
+            No simulated throughput values are generated.
+          </p>
+        </div>
+
+        <div className="rounded-[22px] border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                Live Device Position
+              </p>
+              <h2 className="mt-2 text-2xl font-black tracking-tight">
+                Router-centered top view
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Router is fixed at center. The white device marker moves from
+                measured geolocation.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 px-3 py-2 text-right">
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Heading
+              </div>
+              <div className="text-lg font-black">
+                {heading == null ? "--" : `${heading} deg`}
+              </div>
+            </div>
+          </div>
+
+          <div className="relative mt-5 aspect-square overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
+            <div className="absolute left-1/2 top-1/2 h-[76%] w-[76%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200" />
+            <div className="absolute left-1/2 top-1/2 h-[56%] w-[56%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200" />
+            <div className="absolute left-1/2 top-1/2 h-[36%] w-[36%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200" />
+            <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-slate-200" />
+            <div className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-slate-200" />
+
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+              <div className="relative grid size-20 place-items-center rounded-full bg-slate-950 text-[10px] font-black text-white shadow-xl">
+                ROUTER
+                <span className="absolute inset-[-18px] rounded-full border border-sky-300/60 animate-ping" />
+                <span className="absolute inset-[-34px] rounded-full border border-sky-200/50" />
+                <span className="absolute inset-[-50px] rounded-full border border-sky-100/50" />
+              </div>
+            </div>
+
+            {points.slice(-32).map((point, index) => (
+              <span
+                key={`${point.timestamp}-${index}`}
+                className={`absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ${qualityClass(point.quality)} opacity-70`}
+                style={{
+                  left: `${50 + point.x}%`,
+                  top: `${50 + point.y}%`,
+                }}
+              />
+            ))}
+
+            <div
+              className="absolute transition-[left,top] duration-500 ease-out"
+              style={{
+                left: `${50 + userX}%`,
+                top: `${50 + userY}%`,
+              }}
+            >
+              <div className="relative grid size-12 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 border-slate-950 bg-white shadow-xl">
+                <div className="size-4 rounded-full bg-white border border-slate-300" />
+                <div
+                  className="absolute -top-5 left-1/2 h-5 w-0.5 origin-bottom -translate-x-1/2 bg-white"
+                  style={{
+                    transform: `translateX(-50%) rotate(${heading ?? 0}deg)`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
+              Strong
+            </span>
+            <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">
+              Normal
+            </span>
+            <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-700">
+              Weak
+            </span>
+            <span className="ml-auto rounded-full bg-slate-100 px-3 py-1">
+              Samples: {points.length}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[22px] border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+              Real Walk Analysis
+            </p>
+            <h3 className="mt-1 text-xl font-black">
+              Calibrate, move, measure, report
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">{status}</p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={analyzePosition}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black hover:bg-slate-50"
+            >
+              Analyze Position
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCalibrationOpen((value) => !value)}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black hover:bg-slate-50"
+            >
+              Router Calibration
+            </button>
+
+            <button
+              type="button"
+              onClick={startWalk}
+              disabled={walkRunning}
+              className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-black text-slate-950 disabled:opacity-50"
+            >
+              Start Walk Test
+            </button>
+
+            <button
+              type="button"
+              onClick={stopWalk}
+              disabled={!walkRunning}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black disabled:opacity-40"
+            >
+              Stop
+            </button>
+
+            <button
+              type="button"
+              onClick={resetWalk}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black hover:bg-slate-50"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {calibrationOpen && (
+          <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 p-4">
+            <div className="text-sm font-black text-slate-900">
+              Router reference
+            </div>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              For accurate router-relative movement, the router location must
+              be known. Stand at the physical router and press the calibration
+              button below. SmartCalc does not invent a router coordinate.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={calibrateRouterHere}
+                disabled={!locationReady}
+                className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white disabled:opacity-40"
+              >
+                Calibrate Router Here
+              </button>
+              <button
+                type="button"
+                onClick={clearRouterCalibration}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-black"
+              >
+                Clear Calibration
+              </button>
+            </div>
+            {routerCalibrated && (
+              <p className="mt-3 text-xs font-semibold text-slate-600">
+                Router reference saved for this session.
+              </p>
+            )}
+          </div>
+        )}
+
+        {locationError && (
+          <div className="mt-4 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+            {locationError}
+          </div>
+        )}
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {directional.map((item) => (
+            <div key={item.direction} className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-xs font-black uppercase tracking-wider text-slate-400">
+                {item.direction}
+              </div>
+              <div className="mt-1 text-lg font-black">{item.quality}</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {item.count ? `${item.count} samples` : "Waiting for samples"}
+              </div>
+              {item.avgLatency != null && (
+                <div className="mt-1 text-xs font-semibold text-slate-600">
+                  Avg latency: {Math.round(item.avgLatency)} ms
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric
+            label="Current quality"
+            value={lastSample?.quality ?? "Waiting"}
+          />
+          <Metric
+            label="Current latency"
+            value={fmtMs(lastSample?.latency ?? speed.latency)}
+          />
+          <Metric
+            label="Device accuracy"
+            value={
+              user?.accuracy == null ? "--" : `${Math.round(user.accuracy)} m`
+            }
+          />
+          <Metric
+            label="Router reference"
+            value={routerCalibrated ? "Calibrated" : "Required"}
+          />
+        </div>
+
+        <p className="mt-5 text-xs leading-5 text-slate-500">
+          Browser geolocation and network measurements are real. Standard web
+          browsers do not expose Wi-Fi radio RSSI/BSSID reliably, so SmartCalc
+          never fabricates an RSSI value. Directional quality is derived from
+          measured Internet latency/throughput at the user's measured position.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+        {label}
+      </div>
+      <div className="mt-1 text-lg font-black text-slate-950">{value}</div>
+    </div>
+  );
+}

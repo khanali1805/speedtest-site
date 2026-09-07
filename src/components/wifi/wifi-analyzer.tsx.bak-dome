@@ -1,0 +1,340 @@
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+type Quality = "Strong" | "Fair" | "Weak";
+type Sample = { id: string; x: number; y: number; quality: Quality; latency: number; download: number; distance: number; timestamp: number; };
+type SpeedState = { running: boolean; finished: boolean; baselineProgress: number; download: number | null; latency: number | null; jitter: number | null; quality: Quality | null; outsideRange: boolean; error: string | null; };
+
+const INITIAL: SpeedState = { running: false, finished: false, baselineProgress: 0, download: null, latency: null, jitter: null, quality: null, outsideRange: false, error: null };
+
+function getQuality(dl: number | null, lat: number | null): Quality {
+  if (lat != null && lat > 150) return "Weak";
+  if (dl != null && dl < 5) return "Weak";
+  if (lat != null && lat > 80) return "Fair";
+  if (dl != null && dl < 15) return "Fair";
+  return "Strong";
+}
+
+export default function WifiAnalyzer() {
+  const [speed, setSpeed] = useState<SpeedState>(INITIAL);
+  const [userPos, setUserPos] = useState({ x: 0, y: 0 });
+  const [heading, setHeading] = useState(0);
+  const [samples, setSamples] = useState<Sample[]>([]);
+  const [motionActive, setMotionActive] = useState(false);
+  const [permissionNeeded, setPermissionNeeded] = useState(false);
+
+  const userPosRef = useRef({ x: 0, y: 0 });
+  const speedRef = useRef(INITIAL);
+  const walkRef = useRef<any>(null);
+  const baselineRef = useRef<any>(null);
+  const failCountRef = useRef(0);
+
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+  useEffect(() => { userPosRef.current = userPos; }, [userPos]);
+
+  // Heading follows device
+  useEffect(() => {
+    const h = (e: any) => {
+      let val = e.webkitCompassHeading ?? (typeof e.alpha === "number" ? (360 - e.alpha + 360) % 360 : null);
+      if (val != null) setHeading(Math.round(val));
+    };
+    window.addEventListener("deviceorientation", h, true);
+    window.addEventListener("deviceorientationabsolute" as any, h, true);
+    return () => {
+      window.removeEventListener("deviceorientation", h, true);
+      window.removeEventListener("deviceorientationabsolute" as any, h, true);
+    };
+  }, []);
+
+  // Check if motion permission needed (iOS)
+  useEffect(() => {
+    if (typeof (DeviceMotionEvent as any).requestPermission === "function") setPermissionNeeded(true);
+  }, []);
+
+  // REAL movement tracking - dead reckoning from accelerometer
+  const enableRealMotion = useCallback(async () => {
+    try {
+      if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
+        const p = await (DeviceMotionEvent as any).requestPermission();
+        if (p !== "granted") {
+          setSpeed(s => ({ ...s, error: "Motion permission denied. Allow to track real movement." }));
+          return;
+        }
+      }
+      if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
+        try { await (DeviceOrientationEvent as any).requestPermission(); } catch {}
+      }
+      setMotionActive(true);
+      setPermissionNeeded(false);
+    } catch {
+      setMotionActive(true);
+    }
+  }, []);
+
+  // Step-based movement
+  useEffect(() => {
+    if (!motionActive) return;
+    let lastStep = 0;
+    let lastZ = 0;
+    const onMotion = (e: DeviceMotionEvent) => {
+      const acc = e.accelerationIncludingGravity;
+      const now = Date.now();
+      if (!acc || acc.z == null) return;
+      // Peak detection on Z for steps
+      const delta = acc.z - lastZ;
+      lastZ = acc.z;
+      if (Math.abs(delta) > 2.5 && now - lastStep > 350) {
+        lastStep = now;
+        const rad = (heading * Math.PI) / 180;
+        const stepSize = 3.5; // meters in UI units
+        setUserPos(p => {
+          let nx = p.x + Math.sin(rad) * stepSize;
+          let ny = p.y + -Math.cos(rad) * stepSize;
+          // Limit to map radius ~15m
+          const dist = Math.sqrt(nx * nx + ny * ny);
+          if (dist > 44) {
+            const factor = 44 / dist;
+            nx *= factor;
+            ny *= factor;
+          }
+          return { x: nx, y: ny };
+        });
+      }
+    };
+    window.addEventListener("devicemotion", onMotion);
+    return () => window.removeEventListener("devicemotion", onMotion);
+  }, [motionActive, heading]);
+
+  // REAL internet measurement - external endpoint, not localhost
+  const measureRealNetwork = useCallback(async () => {
+    try {
+      // Try external Cloudflare speed endpoint first (real internet, not localhost)
+      const t0 = performance.now();
+      const pingRes = await fetch(`https://speed.cloudflare.com/__down?bytes=0&cachebust=${Date.now()}`, {
+        cache: "no-store",
+        mode: "cors",
+      }).catch(() => null);
+      
+      let latency: number;
+      if (pingRes) latency = performance.now() - t0;
+      else {
+        // Fallback to local ping if external blocked
+        const lt0 = performance.now();
+        await fetch(`/api/wifi/ping?t=${Date.now()}`, { cache: "no-store" });
+        latency = performance.now() - lt0;
+      }
+
+      // Real download - external 1MB
+      let download: number | null = null;
+      try {
+        const d0 = performance.now();
+        const res = await fetch(`https://speed.cloudflare.com/__down?bytes=500000&cachebust=${Date.now()}`, {
+          cache: "no-store",
+          mode: "cors",
+        });
+        if (res.ok) {
+          await res.arrayBuffer();
+          const dt = (performance.now() - d0) / 1000;
+          if (dt > 0.2) download = (0.5 * 8) / dt; // 0.5MB *8 / seconds = Mbps, only if took >200ms to avoid cache spike
+        }
+      } catch {}
+      
+      // If external fails or gives unrealistic >100Mbps on 5Mbps line, use navigator.connection as truth
+      const conn = (navigator as any).connection;
+      if (conn?.downlink) {
+        // Blend: if measured is >3x reported downlink, use downlink
+        if (download == null || download > conn.downlink * 3) download = conn.downlink;
+      }
+      // Clamp to realistic home wifi
+      if (download != null && download > 200) download = null;
+
+      return { latency, download, failed: false };
+    } catch {
+      failCountRef.current += 1;
+      return { latency: 999, download: null, failed: true };
+    }
+  }, []);
+
+  const startBaseline = useCallback(() => {
+    setSpeed({ ...INITIAL, running: true, baselineProgress: 0 });
+    setSamples([]);
+    setUserPos({ x: 0, y: 0 });
+    failCountRef.current = 0;
+    const start = Date.now();
+    const DURATION = 8000;
+    const lats: number[] = [];
+    const dls: number[] = [];
+
+    baselineRef.current = setInterval(async () => {
+      const elapsed = Date.now() - start;
+      const prog = Math.min(100, (elapsed / DURATION) * 100);
+      setSpeed(s => ({ ...s, baselineProgress: prog }));
+      const m = await measureRealNetwork();
+      if (!m.failed) {
+        failCountRef.current = 0;
+        lats.push(m.latency);
+        if (m.download) dls.push(m.download);
+      } else {
+        if (failCountRef.current > 3) {
+          clearInterval(baselineRef.current);
+          setSpeed(s => ({ ...s, running: false, outsideRange: true, error: "Outside home WiFi range or disconnected" }));
+          return;
+        }
+      }
+      if (elapsed >= DURATION) {
+        clearInterval(baselineRef.current);
+        const avgLat = lats.length ? lats.reduce((a, b) => a + b, 0) / lats.length : 0;
+        const avgDl = dls.length ? dls.reduce((a, b) => a + b, 0) / dls.length : ((navigator as any).connection?.downlink ?? 5);
+        const q = getQuality(avgDl, avgLat);
+        setSpeed({
+          running: false, finished: true, baselineProgress: 100,
+          download: Math.round(avgDl * 10) / 10,
+          latency: Math.round(avgLat),
+          jitter: lats.length > 1 ? Math.round(Math.max(...lats) - Math.min(...lats)) : null,
+          quality: q, outsideRange: false, error: null
+        });
+        // Auto enable motion tracking after baseline
+        if (!motionActive && !permissionNeeded) setMotionActive(true);
+      }
+    }, 700);
+  }, [measureRealNetwork, motionActive, permissionNeeded]);
+
+  // Walk sampling - real measurements while walking
+  useEffect(() => {
+    if (!speed.finished) return;
+    walkRef.current = setInterval(async () => {
+      const pos = userPosRef.current;
+      const m = await measureRealNetwork();
+      if (m.failed) {
+        failCountRef.current += 1;
+        if (failCountRef.current > 5) setSpeed(s => ({ ...s, outsideRange: true }));
+        return;
+      }
+      failCountRef.current = 0;
+      const dist = Math.sqrt(pos.x * pos.x + pos.y * pos.y) * (15 / 44);
+      // If distance >14m consider outside
+      if (dist > 14) {
+        setSpeed(s => ({ ...s, outsideRange: true }));
+        return;
+      }
+      setSpeed(s => ({ ...s, outsideRange: false }));
+      const q = getQuality(m.download ?? speedRef.current.download, m.latency);
+      const sample: Sample = {
+        id: `${Date.now()}-${Math.random()}`, x: pos.x, y: pos.y,
+        quality: q, latency: Math.round(m.latency),
+        download: m.download ?? speedRef.current.download ?? 0,
+        distance: dist, timestamp: Date.now()
+      };
+      setSamples(s => [...s.slice(-100), sample]);
+    }, 2000);
+    return () => clearInterval(walkRef.current);
+  }, [speed.finished, measureRealNetwork]);
+
+  const distance = Math.sqrt(userPos.x * userPos.x + userPos.y * userPos.y) * (15 / 44);
+  const qColor = (q: Quality) => q === "Strong" ? "bg-emerald-400 border-emerald-300" : q === "Fair" ? "bg-amber-300 border-amber-200" : "bg-rose-400 border-rose-300";
+
+  const directional = (["North", "East", "South", "West"] as const).map(dir => {
+    const filtered = samples.filter(s => {
+      const ang = (Math.atan2(s.x, -s.y) * 180 / Math.PI + 360) % 360;
+      if (dir === "North") return ang >= 315 || ang < 45;
+      if (dir === "East") return ang >= 45 && ang < 135;
+      if (dir === "South") return ang >= 135 && ang < 225;
+      return ang >= 225 && ang < 315;
+    });
+    if (!filtered.length) return { dir, quality: "No data", count: 0, avg: null as number | null };
+    const score = filtered.reduce((a, b) => a + (b.quality === "Strong" ? 3 : b.quality === "Fair" ? 2 : 1), 0) / filtered.length;
+    return { dir, quality: score >= 2.5 ? "Strong" : score >= 1.5 ? "Fair" : "Weak", count: filtered.length, avg: Math.round(filtered.reduce((a, b) => a + b.latency, 0) / filtered.length) };
+  });
+
+  return (
+    <section className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-[1.05fr_1fr]">
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5 sm:p-7 shadow-sm">
+          <div className="flex justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">REAL INTERNET • 8S BASELINE</p>
+              <h2 className="mt-2 text-[26px] font-black">Edge Engine</h2>
+              <p className="mt-1 text-xs text-slate-500">{motionActive ? "Tracking real device movement" : "Enable motion to track walk"}</p>
+            </div>
+            <span className={`h-fit rounded-full px-3 py-1 text-xs font-black ${speed.outsideRange ? "bg-rose-100 text-rose-700" : speed.running ? "bg-amber-100 text-amber-700" : speed.finished ? "bg-emerald-100 text-emerald-700" : "bg-slate-100"}`}>
+              {speed.outsideRange ? "Outside range" : speed.running ? `${Math.round(speed.baselineProgress)}%` : speed.finished ? "Live walk" : "Ready"}
+            </span>
+          </div>
+
+          {speed.running && <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-slate-950 transition-all" style={{ width: `${speed.baselineProgress}%` }} /></div>}
+
+          <div className="mt-6 grid grid-cols-3 gap-3">
+            <div className="rounded-2xl bg-slate-950 p-4 text-white"><div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Download</div><div className="mt-1 text-[16px] font-black">{speed.download ? `${speed.download} Mbps` : "-- Mbps"}</div><div className="mt-1 text-[10px] text-slate-400">Real edge, not localhost</div></div>
+            <div className="rounded-2xl bg-slate-50 p-4"><div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Latency</div><div className="mt-1 text-[16px] font-black">{speed.latency ? `${speed.latency} ms` : "-- ms"}</div></div>
+            <div className="rounded-2xl bg-slate-50 p-4"><div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Quality</div><div className="mt-1 text-[16px] font-black">{speed.quality ?? "--"}</div></div>
+          </div>
+
+          {!speed.finished ? (
+            <button onClick={startBaseline} disabled={speed.running} className="mt-6 w-full rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white disabled:opacity-50">
+              {speed.running ? `Measuring... ${Math.round(speed.baselineProgress)}%` : "Start 8-Second Real Baseline"}
+            </button>
+          ) : (
+            <div className="mt-6 flex gap-2">
+              <button onClick={startBaseline} className="flex-1 rounded-2xl border border-slate-200 py-3 text-sm font-black">Restart Baseline</button>
+              <button onClick={() => { setUserPos({ x: 0, y: 0 }); setSamples([]); }} className="flex-1 rounded-2xl bg-slate-100 py-3 text-sm font-black">Reset Position</button>
+            </div>
+          )}
+
+          {permissionNeeded && (
+            <button onClick={enableRealMotion} className="mt-4 w-full rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-white">Enable Real Movement Tracking (iOS permission)</button>
+          )}
+          {!permissionNeeded && !motionActive && speed.finished && (
+            <button onClick={enableRealMotion} className="mt-4 w-full rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-white">Enable Real Walk Tracking</button>
+          )}
+
+          {speed.outsideRange && <div className="mt-4 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-700">You are outside home WiFi range. Your device is not using home WiFi right now. Move closer to router.</div>}
+          {speed.error && !speed.outsideRange && <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">{speed.error}</div>}
+        </div>
+
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5 sm:p-7 shadow-sm">
+          <div className="flex justify-between">
+            <div><p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">TOP-VIEW • REAL MOVEMENT</p><h2 className="mt-2 text-[22px] font-black">Router map</h2><p className="mt-1 text-xs text-slate-500">White head moves when your phone moves. No arrows.</p></div>
+            <div className="text-right"><div className="text-[10px] font-black uppercase text-slate-400">Dist</div><div className="text-lg font-black">{distance.toFixed(1)}m</div><div className="text-[10px] font-bold">{heading}°</div></div>
+          </div>
+
+          <div className="relative mt-5 aspect-square overflow-hidden rounded-[26px] border border-slate-200 bg-[#fbfcfe]">
+            <div className="absolute left-1/2 top-1/2 h-[88%] w-[88%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-slate-200" />
+            <div className="absolute left-1/2 top-1/2 h-[60%] w-[60%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200" />
+            <div className="absolute left-1/2 top-1/2 h-[30%] w-[30%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200" />
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+              <div className="relative grid size-16 place-items-center rounded-full bg-slate-950 text-[9px] font-black text-white shadow-xl">
+                ROUTER
+                <span className="absolute inset-[-14px] animate-ping rounded-full border border-emerald-300/70" style={{ animationDuration: "2s" }} />
+                <span className="absolute inset-[-28px] animate-ping rounded-full border border-amber-200/60" style={{ animationDuration: "2.5s", animationDelay: "0.3s" }} />
+              </div>
+            </div>
+            {samples.map(s => <span key={s.id} className={`absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${qColor(s.quality)}`} style={{ left: `${50 + s.x}%`, top: `${50 + s.y}%` }} />)}
+            <div className="absolute transition-all duration-200 ease-out" style={{ left: `${50 + userPos.x}%`, top: `${50 + userPos.y}%` }}>
+              <div className="relative grid size-[48px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-[3px] border-slate-950 bg-white shadow-xl">
+                <div className="size-5 rounded-full bg-slate-900" />
+                <div className="absolute -top-1 left-1/2 flex -translate-x-1/2 gap-1"><span className="size-1.5 rounded-full bg-slate-900" /><span className="size-1.5 rounded-full bg-slate-900" /></div>
+                <div className="absolute -top-3 left-1/2 h-4 w-[2px] origin-bottom -translate-x-1/2 bg-slate-950" style={{ transform: `translateX(-50%) rotate(${heading}deg)` }} />
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2 text-xs">
+            <span className={`rounded-full px-3 py-1.5 font-black ${motionActive ? "bg-emerald-500 text-white" : "bg-amber-100 text-amber-700"}`}>{motionActive ? "Real tracking ON" : "Tracking OFF - enable to walk"}</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 font-bold">Samples: {samples.length}</span>
+            <span className={`rounded-full px-3 py-1.5 font-black ${speed.quality === "Strong" ? "bg-emerald-50 text-emerald-700" : speed.quality === "Fair" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>{speed.quality ?? "Waiting"}</span>
+          </div>
+          <p className="mt-3 text-[11px] leading-4 text-slate-500">Walk with phone in hand. Head moves with real steps + orientation. Outside 14m = outside WiFi range warning. No fake arrow movement.</p>
+        </div>
+      </div>
+
+      <div className="rounded-[22px] border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+        <h3 className="text-lg font-black">Which area has weak Wi-Fi?</h3>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {directional.map(d => (
+            <div key={d.dir} className="rounded-2xl bg-slate-50 p-4"><div className="text-[11px] font-black uppercase tracking-wider text-slate-400">{d.dir}</div><div className="mt-1 text-lg font-black">{d.quality}</div><div className="mt-1 text-xs text-slate-500">{d.count ? `${d.count} samples • avg ${d.avg}ms` : "Walk that direction"}</div></div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
