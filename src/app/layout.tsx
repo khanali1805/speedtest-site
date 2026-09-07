@@ -9,8 +9,8 @@ export const metadata: Metadata = {
     default: "SpeedCheck - Fast Internet Speed Test, IP Check & WiFi Analyzer",
     template: "%s | SpeedCheck",
   },
-  description: "Check your internet speed instantly with SpeedCheck.online. Test download, upload, ping, find your IP address, analyze WiFi signal strength and test latency. Fast, accurate, free - no ads clutter.",
-  keywords: ["internet speed test", "speed test", "check internet speed", "wifi speed test", "what is my ip", "ping test", "wifi signal map", "speedcheck.online", "speedcheck", "fast speed test"],
+  description: "Check your internet speed instantly with SpeedCheck.online. Test download, upload, ping, find your IP address, analyze WiFi signal strength and test latency. Fast, accurate, free.",
+  keywords: ["internet speed test", "speed test", "check internet speed", "wifi speed test", "what is my ip", "ping test", "wifi signal map", "speedcheck.online", "speedcheck"],
   authors: [{ name: "SpeedCheck" }],
   creator: "SpeedCheck",
   publisher: "SpeedCheck",
@@ -45,7 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     "@type": "WebApplication",
     name: "SpeedCheck",
     url: "https://speedcheck.online",
-    description: "Fast, accurate internet speed test, IP checker, WiFi signal analyzer and ping test - all in one platform",
+    description: "Fast, accurate internet speed test, IP checker, WiFi signal analyzer and ping test",
     applicationCategory: "UtilitiesApplication",
     operatingSystem: "All",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
@@ -57,14 +57,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <head>
         <link rel="icon" href="/speedtest_icon.png" />
-        {/* Google Search Console Verification - ADDED */}
         <meta name="google-site-verification" content="FAVWjfxKrhtZmI7Uhf3SJDhrBOXv1dSvA6Po-WC90tg" />
-        {/* Google AdSense - Replace ca-pub-XXXXXXXXXXXXXXXX with your AdSense publisher ID after approval */}
         <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossOrigin="anonymous"></script>
-        {/* Google Analytics - Replace G-XXXXXXXXXX with your GA4 ID */}
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
         <script dangerouslySetInnerHTML={{ __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-XXXXXXXXXX');` }} />
-        {/* JSON-LD for SEO */}
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
       <body className="min-h-screen bg-[#fcfcfd] text-slate-900 antialiased">
@@ -83,7 +79,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <a href="/privacy-policy" className="hover:text-slate-900">Privacy Policy</a>
                 <a href="/terms" className="hover:text-slate-900">Terms</a>
                 <a href="/contact" className="hover:text-slate-900">Contact</a>
-                <a href="/sitemap.xml" className="hover:text-slate-900">Sitemap</a>
               </div>
             </div>
             <p className="mt-4 text-center text-[11px] text-slate-500">© 2026 SpeedCheck.online - Fast & Accurate Internet Tools | Contact: +923097278546</p>
