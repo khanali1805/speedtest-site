@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import "./globals.css";
 import Header from "@/components/header";
 import WhatsAppButton from "@/components/whatsapp-button";
-
+import Script from "next/script";
 export const metadata: Metadata = {
   metadataBase: new URL("https://speedcheck.online"),
   title: {
@@ -38,7 +38,6 @@ export const metadata: Metadata = {
     google: "FAVWjfxKrhtZmI7Uhf3SJDhrBOXv1dSvA6Po-WC90tg",
   },
 };
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const jsonLd = {
     "@context": "https://schema.org",
@@ -49,41 +48,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     applicationCategory: "UtilitiesApplication",
     operatingSystem: "All",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    aggregateRating: { "@type": "AggregateRating", ratingValue: "4.8", ratingCount: "1250" },
-    author: { "@type": "Organization", name: "SpeedCheck", url: "https://speedcheck.online" },
   };
-
   return (
     <html lang="en">
       <head>
-        <link rel="icon" href="/speedtest_icon.png" />
-        <meta name="google-site-verification" content="FAVWjfxKrhtZmI7Uhf3SJDhrBOXv1dSvA6Po-WC90tg" />
-        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossOrigin="anonymous"></script>
-        <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
-        <script dangerouslySetInnerHTML={{ __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-XXXXXXXXXX');` }} />
+        <Script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXX" crossOrigin="anonymous" strategy="afterInteractive" />
+        <Script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX" strategy="afterInteractive" />
+        <Script id="gtag-init" strategy="afterInteractive" dangerouslySetInnerHTML={{ __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-XXXXXXXXXX');` }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
       <body className="min-h-screen bg-[#fcfcfd] text-slate-900 antialiased">
         <Header />
-        <main className="pb-20">{children}</main>
+        <main>{children}</main>
         <WhatsAppButton />
-        <footer className="border-t border-slate-200 bg-white py-8">
-          <div className="mx-auto max-w-[1100px] px-6">
-            <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
-              <div className="flex items-center gap-2">
-                <img src="/speedtest_icon.png" alt="logo" className="h-6 w-6" />
-                <span className="text-[13px] font-semibold">SpeedCheck.online</span>
-              </div>
-              <div className="flex flex-wrap gap-4 text-[12px] text-slate-500">
-                <a href="/about" className="hover:text-slate-900">About</a>
-                <a href="/privacy-policy" className="hover:text-slate-900">Privacy Policy</a>
-                <a href="/terms" className="hover:text-slate-900">Terms</a>
-                <a href="/contact" className="hover:text-slate-900">Contact</a>
-              </div>
-            </div>
-            <p className="mt-4 text-center text-[11px] text-slate-500">© 2026 SpeedCheck.online - Fast & Accurate Internet Tools | Contact: +923097278546</p>
-          </div>
-        </footer>
       </body>
     </html>
   );
