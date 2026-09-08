@@ -50,14 +50,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
   };
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
-        <Script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXX" crossOrigin="anonymous" strategy="afterInteractive" />
         <Script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX" strategy="afterInteractive" />
         <Script id="gtag-init" strategy="afterInteractive" dangerouslySetInnerHTML={{ __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-XXXXXXXXXX');` }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
-      <body className="min-h-screen bg-[#fcfcfd] text-slate-900 antialiased">
+      <body className="min-h-screen bg-[#fcfcfd] text-slate-900 antialiased" suppressHydrationWarning>
         <Header />
         <main>{children}</main>
         <WhatsAppButton />
