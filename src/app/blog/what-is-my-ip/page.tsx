@@ -1,0 +1,1 @@
+﻿export default function Post(){ return (<div className="mx-auto max-w- p-6"><h1 className="text-2xl font-bold">What is My IP Address?</h1><p className="mt-4">Apna IP check karne ke liye speedcheck.online kholo.</p><a href="/" className="text-blue-600 underline">→ Check IP Now</a></div>)}

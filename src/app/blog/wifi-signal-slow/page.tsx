@@ -1,0 +1,1 @@
+﻿export default function Post(){ return (<div className="mx-auto max-w- p-6"><h1 className="text-2xl font-bold">Why Your WiFi is Slow?</h1><p className="mt-4">WiFi slow hai? Router ko beech me rakho, upar rakho.</p><a href="/" className="text-blue-600 underline">→ Check WiFi Map</a></div>)}
