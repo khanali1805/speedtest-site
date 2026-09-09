@@ -1,5 +1,12 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import "./globals.css";
+<<<<<<< HEAD
+=======
+import Header from "@/components/header";
+import WhatsAppButton from "@/components/whatsapp-button";
+import Script from "next/script";
+import { Analytics } from "@vercel/analytics/next";
+>>>>>>> 4c4ac991b96de017352ba6bcbfbb8a057faa704d
 export const metadata: Metadata = {
   metadataBase: new URL("https://netcheck.site"),
   title: {
@@ -37,9 +44,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     potentialAction: { "@type": "SearchAction", target: "https://netcheck.site/search?q={search_term_string}", "query-input": "required name=search_term_string" }
   };
   return (
+<<<<<<< HEAD
     <html lang="en">
       <head><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} /></head>
       <body>{children}</body>
+=======
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <Script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX" strategy="afterInteractive" />
+        <Script id="gtag-init" strategy="afterInteractive" dangerouslySetInnerHTML={{ __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-XXXXXXXXXX');` }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      </head>
+      <body className="min-h-screen bg-[#fcfcfd] text-slate-900 antialiased" suppressHydrationWarning>
+        <Header />
+        <main>{children}</main>
+        <WhatsAppButton />
+        <Analytics />
+      </body>
+>>>>>>> 4c4ac991b96de017352ba6bcbfbb8a057faa704d
     </html>
   );
 }
