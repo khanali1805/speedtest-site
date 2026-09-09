@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Header, Footer } from "@/components/BrandHeader";
@@ -12,7 +12,6 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
   const host = h.get('host') || 'netcheck.site';
   const brand = getBrand(host);
-  
   return {
     title: `${brand.full} - Speed Test, My IP, WiFi Map & Ping Tools`,
     description: `${brand.full} - Fast, accurate internet tools. Test speed, check IP, map WiFi signal, and ping any server. Professional tools for everyone.`,
@@ -32,4 +31,3 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
-
