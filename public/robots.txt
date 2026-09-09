@@ -1,6 +1,5 @@
-﻿User-agent: *
+User-agent: *
 Allow: /
 Disallow: /api/
 
 Sitemap: https://netcheck.site/sitemap.xml
-
