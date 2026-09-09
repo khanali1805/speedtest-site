@@ -5,7 +5,7 @@ import Image from "next/image";
 
 export default async function Home() {
   const h = await headers();
-  const brand = getBrand(h.get("host"));
+  const brand = getBrand(h.get('host'));
 
   const tools = [
     { title: "Internet Speed Test", desc: "Check real download, upload and ping speed with high accuracy.", href: "/speed-test" },
@@ -16,7 +16,6 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen bg-[#f8fafc]">
-      {/* Hero */}
       <section className="mx-auto mt-6 max-w-[1100px] rounded-[24px] bg-[#1e3a8a] px-8 py-10 text-white">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-white p-1.5">
@@ -35,7 +34,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Tools */}
       <section className="mx-auto mt-8 grid max-w-[1100px] grid-cols-1 gap-5 px-6 md:grid-cols-2 lg:grid-cols-4">
         {tools.map((c) => (
           <div key={c.title} className="rounded-[16px] border border-gray-200 bg-white p-6 shadow-sm transition hover:shadow-md">
@@ -49,11 +47,10 @@ export default async function Home() {
         ))}
       </section>
 
-      {/* SEO */}
       <section className="mx-auto mt-10 max-w-[1100px] rounded-[16px] border border-gray-200 bg-white px-8 py-7">
         <h2 className="text-[17px] font-bold text-gray-900">Why {brand.full} is the Best Speed Test Tool?</h2>
         <p className="mt-3 text-[14px] leading-7 text-gray-600">
-          {brand.full} is a professional, free and accurate platform to test your internet speed, check your IP address, analyze WiFi signal strength and test ping latency. Our tools use advanced technology to provide real-time results with high accuracy. Whether you want to check if your ISP is delivering promised speeds or troubleshoot your WiFi, {brand.full} is your trusted partner. Also available on {brand.full === 'NetCheck.site' ? 'SpeedCheck.online' : 'NetCheck.site'}.
+          {brand.full} is a professional, free and accurate platform to test your internet speed, check your IP address, analyze WiFi signal strength and test ping latency. Our tools use advanced technology to provide real-time results with high accuracy. Whether you want to check if your ISP is delivering promised speeds or troubleshoot your WiFi, {brand.full} is your trusted partner.
         </p>
       </section>
     </main>

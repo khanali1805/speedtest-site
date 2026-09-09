@@ -34,7 +34,6 @@ export async function Footer() {
   return (
     <footer className="mt-16 border-t border-gray-200 bg-white">
       <div className="mx-auto grid max-w-[1100px] grid-cols-1 gap-10 px-6 py-12 md:grid-cols-3">
-        {/* Brand */}
         <div>
           <div className="flex items-center gap-2.5">
             <div className="h-9 w-9 overflow-hidden rounded-full bg-[#0f172a] p-1">
@@ -43,11 +42,10 @@ export async function Footer() {
             <span className="font-bold text-[16px] text-gray-900">{brand.full}</span>
           </div>
           <p className="mt-4 max-w-[320px] text-[13px] leading-6 text-gray-500">
-            Fast, accurate and reliable internet tools for everyone on {brand.full}. Test speed, check IP, map WiFi and ping any server - all in one professional platform. Also available on {brand.full === 'NetCheck.site' ? 'SpeedCheck.online' : 'NetCheck.site'}.
+            Fast, accurate and reliable internet tools for everyone on {brand.full}. Test speed, check IP, map WiFi and ping any server - all in one professional platform.
           </p>
         </div>
 
-        {/* Tools */}
         <div>
           <h4 className="text-[13px] font-bold uppercase tracking-wider text-gray-900">Tools</h4>
           <ul className="mt-4 space-y-3 text-[13px] text-gray-600">
@@ -59,7 +57,6 @@ export async function Footer() {
           </ul>
         </div>
 
-        {/* Company */}
         <div>
           <h4 className="text-[13px] font-bold uppercase tracking-wider text-gray-900">Company</h4>
           <ul className="mt-4 space-y-3 text-[13px] text-gray-600">
@@ -67,7 +64,6 @@ export async function Footer() {
             <li><Link href="/contact" className="hover:text-gray-900">Contact</Link></li>
             <li><Link href="/privacy-policy" className="hover:text-gray-900">Privacy Policy</Link></li>
             <li><Link href="/terms" className="hover:text-gray-900">Terms of Service</Link></li>
-            <li><Link href="/sitemap.xml" className="hover:text-gray-900">Sitemap</Link></li>
           </ul>
         </div>
       </div>
@@ -75,7 +71,7 @@ export async function Footer() {
       <div className="border-t border-gray-100">
         <div className="mx-auto flex max-w-[1100px] flex-col items-center justify-between gap-2 px-6 py-5 text-[12px] text-gray-500 md:flex-row">
           <span>© {year} {brand.full}. All rights reserved.</span>
-          <span>Available on <Link href={brand.domain === 'netcheck.site' ? 'https://speedcheck.online' : 'https://netcheck.site'} className="font-medium text-[#1e3a8a] hover:underline">{brand.full === 'NetCheck.site' ? 'SpeedCheck.online' : 'NetCheck.site'}</Link></span>
+          <span>Fast & Professional Tools</span>
         </div>
       </div>
     </footer>
