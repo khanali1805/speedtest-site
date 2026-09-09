@@ -1,4 +1,4 @@
-export default function HomePage() {
+﻿export default function HomePage() {
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-6">
       {/* Hero - CORRECTED NAME SpeedCheck */}
@@ -7,9 +7,9 @@ export default function HomePage() {
         <div className="relative z-10 max-w-[700px]">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white">
-              <span className="text-[20px]">⚡</span>
+              <span className="text-[20px]">âš¡</span>
             </div>
-            <h1 className="text-[32px] font-bold tracking-tight">SpeedCheck</h1>
+            <h1 className="text-[32px] font-bold tracking-tight">SpeedCheck.online</h1>
           </div>
           <p className="mt-4 text-[14px] leading-6 text-blue-100">
             Fast, accurate and reliable internet tools built for everyone. Check your internet performance, discover your connection details, analyze your WiFi coverage and test network latency - all in one professional platform designed for accuracy and simplicity.
@@ -57,12 +57,13 @@ export default function HomePage() {
           SpeedCheck.online is a professional, free and accurate platform to test your internet speed, check your IP address, analyze WiFi signal strength and test ping latency. Our tools use advanced technology to provide real-time results with high accuracy. Whether you want to check if your ISP is delivering promised speeds or troubleshoot your WiFi, SpeedCheck is your trusted partner.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 text-[12px] text-slate-600">
-          <div>✓ Fast download & upload test</div>
-          <div>✓ Accurate ping measurement</div>
-          <div>✓ Real-time IP detection</div>
-          <div>✓ WiFi coverage analysis</div>
+          <div>âœ“ Fast download & upload test</div>
+          <div>âœ“ Accurate ping measurement</div>
+          <div>âœ“ Real-time IP detection</div>
+          <div>âœ“ WiFi coverage analysis</div>
         </div>
       </div>
     </div>
   );
 }
+
