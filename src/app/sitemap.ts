@@ -1,62 +1,13 @@
-import type { MetadataRoute } from "next";
-
+﻿import type { MetadataRoute } from 'next';
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = "https://speedcheck.online";
-  
-  return [
-    {
-      url: baseUrl,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 1,
-    },
-    {
-      url: `${baseUrl}/speed-test`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.9,
-    },
-    {
-      url: `${baseUrl}/what-is-my-ip`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.9,
-    },
-    {
-      url: `${baseUrl}/wifi-map`,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/ping-test`,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/about`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
-    {
-      url: `${baseUrl}/privacy-policy`,
-      lastModified: new Date(),
-      changeFrequency: "yearly",
-      priority: 0.5,
-    },
-    {
-      url: `${baseUrl}/contact`,
-      lastModified: new Date(),
-      changeFrequency: "yearly",
-      priority: 0.5,
-    },
-    {
-      url: `${baseUrl}/terms`,
-      lastModified: new Date(),
-      changeFrequency: "yearly",
-      priority: 0.5,
-    },
-  ];
+  const base = 'https://netcheck.site';
+  const oldBase = 'https://speedcheck.online';
+  const now = new Date();
+  const pages = ['', '/speed-test', '/what-is-my-ip', '/wifi-map', '/ping-test', '/wifi-controller', '/pk', '/pk/speed-test', '/blog'];
+  const sitemaps: MetadataRoute.Sitemap = [];
+  // New domain - primary
+  pages.forEach(p => sitemaps.push({ url: `${base}${p}`, lastModified: now, changeFrequency: 'daily', priority: p === '' ? 1 : 0.8 }));
+  // Old domain - secondary (Google ko batane ke liye dono live hain)
+  pages.forEach(p => sitemaps.push({ url: `${oldBase}${p}`, lastModified: now, changeFrequency: 'daily', priority: 0.7 }));
+  return sitemaps;
 }
