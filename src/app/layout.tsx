@@ -1,8 +1,9 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import "./globals.css";
 import Header from "@/components/header";
 import WhatsAppButton from "@/components/whatsapp-button";
 import Script from "next/script";
+import { Analytics } from "@vercel/analytics/next";
 export const metadata: Metadata = {
   metadataBase: new URL("https://speedcheck.online"),
   title: {
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Header />
         <main>{children}</main>
         <WhatsAppButton />
+        <Analytics />
       </body>
     </html>
   );
