@@ -65,7 +65,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <head>
-        {/* BACKEND SEO - Not visible on frontend, only for Google */}
+        {/* ULTIMATE BRAND DOMINATION SEO - Covers all variations */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -73,8 +73,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               "@context": "https://schema.org",
               "@type": "WebSite",
               "name": brand.full,
-              "alternateName": ["Speed Check", "Speed Test", "Internet Speed Test", "Net Check", "Speed Check Online", "Fast Speed Test", brand.name, brand.short],
+              "alternateName": brand.alternateNames,
               "url": domainUrl,
+              "description": brand.seoDescription,
               "potentialAction": {
                 "@type": "SearchAction",
                 "target": {
@@ -82,7 +83,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   "urlTemplate": `${domainUrl}/search?q={search_term_string}`
                 },
                 "query-input": "required name=search_term_string"
-              }
+              },
+              "sameAs": [domainUrl]
+            })
+          }}
+        />
+        {/* Organization Schema for Brand Variations */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Organization",
+              "name": brand.full,
+              "alternateName": brand.alternateNames.slice(0, 5),
+              "url": domainUrl,
+              "logo": `${domainUrl}/logo.png`
             })
           }}
         />
