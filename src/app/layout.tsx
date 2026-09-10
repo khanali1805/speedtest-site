@@ -32,7 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: brand.seoTitle,
       description: brand.seoDescription,
       siteName: brand.full,
-      images: [{ url: "/logo.png", width: 512, height: 512, alt: `${brand.full} - Speed Check` }],
+      images: [{ url: "/logo.png", width: 512, height: 512, alt: brand.full }],
     },
     twitter: {
       card: "summary_large_image",
@@ -53,31 +53,33 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     manifest: "/manifest.webmanifest",
     icons: { icon: "/logo.png", apple: "/logo.png" },
-    verification: {
-      google: "", // add later if needed
-    },
   };
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const h = await headers();
+  const host = h.get('host') || 'netcheck.site';
+  const brand = getBrand(host);
+  const domainUrl = `https://${brand.domain}`;
+
   return (
     <html lang="en">
       <head>
-        {/* JSON-LD for Strong SEO - Speed Check */}
+        {/* BACKEND SEO - Not visible on frontend, only for Google */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify({
               "@context": "https://schema.org",
               "@type": "WebSite",
-              "name": "Speed Check - Fast Internet Speed Test",
-              "alternateName": ["Speed Test", "Internet Speed Test", "Net Check", "SpeedCheck Online", "Fast Speed Test"],
-              "url": "https://speedcheck.online",
+              "name": brand.full,
+              "alternateName": ["Speed Check", "Speed Test", "Internet Speed Test", "Net Check", "Speed Check Online", "Fast Speed Test", brand.name, brand.short],
+              "url": domainUrl,
               "potentialAction": {
                 "@type": "SearchAction",
                 "target": {
                   "@type": "EntryPoint",
-                  "urlTemplate": "https://speedcheck.online/search?q={search_term_string}"
+                  "urlTemplate": `${domainUrl}/search?q={search_term_string}`
                 },
                 "query-input": "required name=search_term_string"
               }

@@ -7,8 +7,6 @@ export interface BrandInfo {
   seoTitle: string;
   seoDescription: string;
   keywords: string[];
-  h1: string;
-  h1Highlight: string;
 }
 
 const BRANDS: Record<string, BrandInfo> = {
@@ -19,7 +17,7 @@ const BRANDS: Record<string, BrandInfo> = {
     domain: 'netcheck.site',
     short: 'NetCheck',
     seoTitle: 'Speed Check - Fast Internet Speed Test & Net Check | NetCheck.site',
-    seoDescription: 'Speed Check - Test your internet speed instantly. Fast, accurate speed test, net check, WiFi speed test, IP checker & ping test. #1 Fast.com alternative. Check your speed now!',
+    seoDescription: 'Speed Check - Test your internet speed instantly with NetCheck.site. Fast, accurate speed test, net check, WiFi speed test, IP checker & ping test. Best speed test online - check your speed now!',
     keywords: [
       'speed check',
       'speed test',
@@ -31,14 +29,12 @@ const BRANDS: Record<string, BrandInfo> = {
       'check my internet speed',
       'wifi speed test',
       'net speed check',
-      'fast.com',
-      'speedcheck',
-      'what is my ip',
+      'my ip',
       'ping test',
-      'wifi map'
-    ],
-    h1: 'Speed Check',
-    h1Highlight: 'Fast Internet Speed Test'
+      'wifi map',
+      'netcheck',
+      'speedcheck'
+    ]
   },
   'speedcheck.online': {
     full: 'SpeedCheck.online',
@@ -46,8 +42,8 @@ const BRANDS: Record<string, BrandInfo> = {
     tld: '.online',
     domain: 'speedcheck.online',
     short: 'SpeedCheck',
-    seoTitle: 'Speed Check Online - Fast Speed Test & Internet Speed Check',
-    seoDescription: 'Speed Check Online - Instant speed test & speed check tool. Check internet speed, net speed, WiFi speed, IP & ping in 5 seconds. Most accurate speed test online - 100% free!',
+    seoTitle: 'Speed Check Online - Fast Speed Test & Internet Speed Check | SpeedCheck.online',
+    seoDescription: 'Speed Check Online - Instant speed test & speed check tool with SpeedCheck.online. Check internet speed, net speed, WiFi speed, IP & ping in 5 seconds. Most accurate speed test online - 100% free!',
     keywords: [
       'speed check',
       'speed check online',
@@ -59,14 +55,12 @@ const BRANDS: Record<string, BrandInfo> = {
       'check internet speed',
       'internet speed check',
       'speedcheck.online',
-      'fast.com alternative',
       'wifi speed test',
       'my ip',
       'ping test',
-      'speed test by speedcheck'
-    ],
-    h1: 'Speed Check Online',
-    h1Highlight: 'Internet Speed Test'
+      'speed test by speedcheck',
+      'speedcheck'
+    ]
   }
 };
 
@@ -75,11 +69,6 @@ export function getBrand(host?: string | null): BrandInfo {
   const clean = host.toLowerCase().replace(/^www\./, '').split(':')[0];
   if (clean.includes('speedcheck.online')) return BRANDS['speedcheck.online'];
   if (clean.includes('netcheck.site')) return BRANDS['netcheck.site'];
-  // default for localhost/dev
   if (clean.includes('localhost') || clean.includes('vercel.app')) return BRANDS['netcheck.site'];
   return BRANDS['netcheck.site'];
-}
-
-export function getAllBrands(): BrandInfo[] {
-  return Object.values(BRANDS);
 }
