@@ -1,3 +1,4 @@
+
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -22,9 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
     description: brand.seoDescription,
     keywords: brand.keywords,
     metadataBase: new URL(url),
-    alternates: {
-      canonical: url,
-    },
+    alternates: { canonical: url },
     openGraph: {
       type: "website",
       locale: "en_US",
@@ -40,19 +39,21 @@ export async function generateMetadata(): Promise<Metadata> {
       description: brand.seoDescription,
       images: ["/logo.png"],
     },
+    icons: {
+      icon: [
+        { url: "/logo.png", sizes: "32x32", type: "image/png" },
+        { url: "/logo.png", sizes: "192x192", type: "image/png" },
+        { url: "/logo.png", sizes: "512x512", type: "image/png" }
+      ],
+      apple: "/logo.png",
+      shortcut: "/logo.png"
+    },
+    manifest: "/manifest.webmanifest",
     robots: {
       index: true,
       follow: true,
-      googleBot: {
-        index: true,
-        follow: true,
-        'max-video-preview': -1,
-        'max-image-preview': 'large',
-        'max-snippet': -1,
-      },
+      googleBot: { index: true, follow: true, 'max-video-preview': -1, 'max-image-preview': 'large', 'max-snippet': -1 },
     },
-    manifest: "/manifest.webmanifest",
-    icons: { icon: "/logo.png", apple: "/logo.png" },
   };
 }
 
@@ -65,7 +66,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <head>
-        {/* ULTIMATE BRAND DOMINATION SEO - Covers all variations */}
+        <link rel="icon" href="/logo.png" sizes="any" />
+        <link rel="apple-touch-icon" href="/logo.png" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -76,19 +78,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               "alternateName": brand.alternateNames,
               "url": domainUrl,
               "description": brand.seoDescription,
+              "keywords": brand.keywords.join(", "),
               "potentialAction": {
                 "@type": "SearchAction",
-                "target": {
-                  "@type": "EntryPoint",
-                  "urlTemplate": `${domainUrl}/search?q={search_term_string}`
-                },
+                "target": { "@type": "EntryPoint", "urlTemplate": `${domainUrl}/search?q={search_term_string}` },
                 "query-input": "required name=search_term_string"
-              },
-              "sameAs": [domainUrl]
+              }
             })
           }}
         />
-        {/* Organization Schema for Brand Variations */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -96,9 +94,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               "@context": "https://schema.org",
               "@type": "Organization",
               "name": brand.full,
-              "alternateName": brand.alternateNames.slice(0, 5),
+              "alternateName": brand.name,
               "url": domainUrl,
-              "logo": `${domainUrl}/logo.png`
+              "logo": `${domainUrl}/logo.png`,
+              "image": `${domainUrl}/logo.png`,
+              "description": brand.seoDescription
+            })
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              "mainEntity": [
+                { "@type": "Question", "name": "What is Net Check and Speed Check?", "acceptedAnswer": { "@type": "Answer", "text": "Net Check and Speed Check are tools to test internet speed, WiFi analyzer, my ip country map, ping test, PTCL speed test, fiberlink speed test." } },
+                { "@type": "Question", "name": "How to do WiFi Analyzer and My IP Country Map?", "acceptedAnswer": { "@type": "Answer", "text": "Use NetCheck.site or SpeedCheck.online for WiFi Analyzer, My IP Country Map, What is My IP, Ping Test, Speed Test Internet, PTCL Speed Test." } },
+                { "@type": "Question", "name": "What is PTCL Speed Test and Fiberlink Speed Test?", "acceptedAnswer": { "@type": "Answer", "text": "PTCL Speed Test and Fiberlink Speed Test check your ISP speed. Search ptcl speed test, fiberlink speed test, speed test internet, wifi analyzer." } }
+              ]
             })
           }}
         />
