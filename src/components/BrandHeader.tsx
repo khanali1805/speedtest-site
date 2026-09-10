@@ -1,6 +1,6 @@
+
 import { headers } from "next/headers";
 import { getBrand } from "@/lib/brand";
-import Image from "next/image";
 import Link from "next/link";
 
 export async function Header() {
@@ -9,8 +9,8 @@ export async function Header() {
   return (
     <header className="sticky top-0 z-50 flex items-center justify-between border-b border-gray-200 bg-white/95 backdrop-blur px-6 py-3">
       <Link href="/" className="flex items-center gap-2.5">
-        <div className="h-8 w-8 overflow-hidden rounded-full bg-[#0f172a] p-1">
-          <Image src="/logo.png" alt={`${brand.full} logo`} width={32} height={32} className="h-full w-full object-contain" priority />
+        <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-[#0f172a]">
+          <img src="/logo.png" alt={`${brand.full} logo`} width="32" height="32" className="h-7 w-7 object-contain" />
         </div>
         <span className="font-bold text-[17px] text-gray-900">{brand.name}</span>
         <span className="rounded-full bg-[#1e3a8a] px-2.5 py-1 text-[11px] font-semibold text-white">{brand.tld}</span>
@@ -37,8 +37,8 @@ export async function Footer() {
         <div className="grid grid-cols-1 gap-10 md:grid-cols-3">
           <div>
             <div className="flex items-center gap-2">
-              <div className="h-7 w-7 overflow-hidden rounded-full bg-[#0f172a] p-1">
-                <Image src="/logo.png" alt="logo" width={28} height={28} className="h-full w-full object-contain" />
+              <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-[#0f172a]">
+                <img src="/logo.png" alt="logo" width="28" height="28" className="h-6 w-6 object-contain" />
               </div>
               <span className="font-bold text-[15px] text-gray-900">{brand.full}</span>
             </div>
