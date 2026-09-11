@@ -6,8 +6,19 @@ import { Header, Footer } from "@/components/BrandHeader";
 import { getBrand } from "@/lib/brand";
 import { headers } from "next/headers";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const geistSans = Geist({ 
+  variable: "--font-geist-sans", 
+  subsets: ["latin"],
+  display: "swap",
+  preload: true,
+  fallback: ["system-ui", "arial"]
+});
+const geistMono = Geist_Mono({ 
+  variable: "--font-geist-mono", 
+  subsets: ["latin"],
+  display: "swap",
+  preload: false
+});
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
@@ -66,6 +77,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <head>
+        <link rel="preconnect" href="https://speed.cloudflare.com" />
+        <link rel="dns-prefetch" href="https://speed.cloudflare.com" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="icon" href="/logo.png" sizes="any" />
         <link rel="apple-touch-icon" href="/logo.png" />
         <script
@@ -99,20 +113,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               "logo": `${domainUrl}/logo.png`,
               "image": `${domainUrl}/logo.png`,
               "description": brand.seoDescription
-            })
-          }}
-        />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "FAQPage",
-              "mainEntity": [
-                { "@type": "Question", "name": "What is Net Check and Speed Check?", "acceptedAnswer": { "@type": "Answer", "text": "Net Check and Speed Check are tools to test internet speed, WiFi analyzer, my ip country map, ping test, PTCL speed test, fiberlink speed test." } },
-                { "@type": "Question", "name": "How to do WiFi Analyzer and My IP Country Map?", "acceptedAnswer": { "@type": "Answer", "text": "Use NetCheck.site or SpeedCheck.online for WiFi Analyzer, My IP Country Map, What is My IP, Ping Test, Speed Test Internet, PTCL Speed Test." } },
-                { "@type": "Question", "name": "What is PTCL Speed Test and Fiberlink Speed Test?", "acceptedAnswer": { "@type": "Answer", "text": "PTCL Speed Test and Fiberlink Speed Test check your ISP speed. Search ptcl speed test, fiberlink speed test, speed test internet, wifi analyzer." } }
-              ]
             })
           }}
         />

@@ -2,6 +2,7 @@
 import { headers } from "next/headers";
 import { getBrand } from "@/lib/brand";
 import Link from "next/link";
+import Image from "next/image";
 
 export async function Header() {
   const h = await headers();
@@ -10,7 +11,7 @@ export async function Header() {
     <header className="sticky top-0 z-50 flex items-center justify-between border-b border-gray-200 bg-white/95 backdrop-blur px-6 py-3">
       <Link href="/" className="flex items-center gap-2.5">
         <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-[#0f172a]">
-          <img src="/logo.png" alt={`${brand.full} logo`} width="32" height="32" className="h-7 w-7 object-contain" />
+          <Image src="/logo.png" alt={`${brand.full} logo`} width={28} height={28} className="h-7 w-7 object-contain" priority sizes="28px" />
         </div>
         <span className="font-bold text-[17px] text-gray-900">{brand.name}</span>
         <span className="rounded-full bg-[#1e3a8a] px-2.5 py-1 text-[11px] font-semibold text-white">{brand.tld}</span>
@@ -38,7 +39,7 @@ export async function Footer() {
           <div>
             <div className="flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-[#0f172a]">
-                <img src="/logo.png" alt="logo" width="28" height="28" className="h-6 w-6 object-contain" />
+                <Image src="/logo.png" alt="logo" width={24} height={24} className="h-6 w-6 object-contain" sizes="24px" />
               </div>
               <span className="font-bold text-[15px] text-gray-900">{brand.full}</span>
             </div>
@@ -49,10 +50,10 @@ export async function Footer() {
           <div>
             <h4 className="text-[12px] font-bold uppercase tracking-wider text-gray-900">Tools</h4>
             <ul className="mt-4 space-y-2.5 text-[13px] text-gray-600">
-              <li><Link href="/speed-test" className="hover:text-gray-900">Internet Speed Test</Link></li>
-              <li><Link href="/what-is-my-ip" className="hover:text-gray-900">What is My IP</Link></li>
-              <li><Link href="/wifi-map" className="hover:text-gray-900">WiFi Signal Map</Link></li>
-              <li><Link href="/ping-test" className="hover:text-gray-900">Ping Test</Link></li>
+              <li><Link href="/speed-test" className="hover:text-gray-900" aria-label="Internet Speed Test">Internet Speed Test</Link></li>
+              <li><Link href="/what-is-my-ip" className="hover:text-gray-900" aria-label="What is My IP">What is My IP</Link></li>
+              <li><Link href="/wifi-map" className="hover:text-gray-900" aria-label="WiFi Signal Map">WiFi Signal Map</Link></li>
+              <li><Link href="/ping-test" className="hover:text-gray-900" aria-label="Ping Test">Ping Test</Link></li>
             </ul>
           </div>
           <div>
